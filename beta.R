@@ -2,6 +2,8 @@ data_beta_reg <- data_processed %>%
     data.frame() %>% 
     select(permno, date, adj_ret, size, b2m, e2p, exchcd, vwretd, at, be, ib)
 
+# for creation of num column, number of non NA returns in the past 5 years
+
 tmp_prebeta <- data_beta_reg %>%
     data.frame() %>% 
     select(permno, date, adj_ret) %>%
@@ -33,6 +35,8 @@ data_beta <- tmp_prebeta2 %>%
     drop_na(date) %>%
     data.frame()
 
+# calculate pre ranking betas
+# calculates the pre ranking beta for each stock at each June
 pre_beta <- function(df){
     df <- df %>%
         data.frame() %>% 
@@ -56,10 +60,11 @@ pre_beta <- function(df){
     df
 }
 
-# calculates the pre ranking beta for each stock at each June
 preBeta<- do.call(rbind, lapply(split(data_beta, data_beta$permno), pre_beta))
 nyse_preBeta <- preBeta %>% filter(exchcd %in% c(1, 31))
 
+# calculate NYSE size(ME) breakpoints each month
+# as well as beta breakpoints (1 set for each size group)
 breakpoints <- function(df) {
     bps <- list()
     bps$sizes <- quantile(df$size, seq(0.1, 0.9, 0.1), na.rm = TRUE)
@@ -71,8 +76,11 @@ breakpoints <- function(df) {
     }
     bps
 }
+# suppose to only look for beta-size group of last june
+# calculated all here, will only look for June groupings below
 nyse_breakpoints <- lapply(split(nyse_preBeta, nyse_preBeta$date), breakpoints)
 
+# assign size groups and beta groups to each stock each month
 preBetaGroup <- function(df, bps) {
     bps <- bps[[ as.character(df$date[1]) ]]
     gps <- df %>%
@@ -82,19 +90,21 @@ preBetaGroup <- function(df, bps) {
     })
     do.call(rbind, gpl)
 }
-# each stock at each june with corresponding groups
+# find their size-beta group of last june (NYSE, NASDAQ, AMEX)
 beta_groups <- do.call(rbind, lapply(split(preBeta, preBeta$date), preBetaGroup, nyse_breakpoints))
 data_groups <- data_beta %>%
     data.frame() %>% 
-    # should be 6 months, there's an error in front
     mutate(testDate = last_june(date)) %>%
     left_join(select(beta_groups, permno, date, size_g, beta_g), by = c("permno", "testDate" = "date")) %>% 
     select(date, permno, adj_ret, size_g, beta_g)
 
+# beta_processed for processed data with beta groups and preranking beta
+# since post ranking beta depends on the time horizon of data, they'll be calculated separately
+# 
 data_idx <- data_idx %>% mutate(vwretd_l1 = lag(vwretd))
 beta_processed <- data_beta %>%
     data.frame() %>% 
-    # should be 6 months, there's an error in front
+    # find their size-beta group of last june (NYSE, NASDAQ, AMEX)
     mutate(testDate = last_june(date)) %>%
     left_join(select(beta_groups, permno, date, size_g, beta_g), by = c("permno", "testDate" = "date")) %>%
     group_by(date, size_g, beta_g) %>%
